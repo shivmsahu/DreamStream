@@ -341,10 +341,12 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
             });
           });
         } else {
-          request.response
-            ..headers.contentType = ContentType.html
-            ..write(_webAppHtml)
-            ..close();
+          rootBundle.loadString('assets/web/index.html').then((html) {
+            request.response
+              ..headers.contentType = ContentType.html
+              ..write(html)
+              ..close();
+          });
         }
       });
     } catch (e) {
@@ -515,21 +517,21 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
     );
   }
 
-  Future<void> _showIPhoneQrCodeDialog() async {
+  Future<void> _showBrowserQrCodeDialog() async {
     final ip = await _getLocalIpAddress();
     if (ip == 'Unknown') {
       setState(() => _status = LocalizationService.getString('cannot_find_local_ip'));
       return;
     }
     
-    final url = 'https://$ip:8443';
+    final url = 'https://shivmsahu.github.io/DreamStream/?ip=$ip';
 
     if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E1E),
-        title: const Text('Scan with iPhone'),
+        title: const Text('Scan with Phone'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -818,7 +820,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _buildDropdown<String>(LocalizationService.getString('connection'), _connectionMode, ['USB (ADB)', 'Wi-Fi (Android)', 'Web App (iPhone)'], (v) => setState(() => _connectionMode = v!))),
+                    Expanded(child: _buildDropdown<String>(LocalizationService.getString('connection'), _connectionMode, ['USB (ADB)', 'Wi-Fi (Android)', 'Web App (Browser)'], (v) => setState(() => _connectionMode = v!))),
                     const SizedBox(width: 16),
                     if (_connectionMode == 'Wi-Fi (Android)')
                       Expanded(
@@ -859,12 +861,12 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                           ],
                         ),
                       )
-                    else if (_connectionMode == 'Web App (iPhone)')
+                    else if (_connectionMode == 'Web App (Browser)')
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Waiting for iPhone connection...', style: TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.bold)),
+                            const Text('Waiting for browser connection...', style: TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
                             Row(
                               children: [
@@ -881,9 +883,9 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 IconButton(
-                                  onPressed: _showIPhoneQrCodeDialog,
+                                  onPressed: _showBrowserQrCodeDialog,
                                   icon: const Icon(Icons.qr_code, color: Color(0xFF8B5CF6)),
-                                  tooltip: 'Show iPhone QR',
+                                  tooltip: 'Show QR Code',
                                 ),
                               ],
                             ),
@@ -908,7 +910,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                     Expanded(
                       child: !_isStreaming
                         ? ElevatedButton(
-                            onPressed: _connectionMode == 'Web App (iPhone)' ? _showIPhoneQrCodeDialog : _startServerOnAndroid,
+                            onPressed: _connectionMode == 'Web App (Browser)' ? _showBrowserQrCodeDialog : _startServerOnAndroid,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF8B5CF6),
                               foregroundColor: Colors.white,
@@ -916,7 +918,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               elevation: 0,
                             ),
-                            child: Text(_connectionMode == 'Web App (iPhone)' ? 'Show QR Code' : LocalizationService.getString('connect'), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                            child: Text(_connectionMode == 'Web App (Browser)' ? 'Show QR Code' : LocalizationService.getString('connect'), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                           )
                         : ElevatedButton(
                             onPressed: _stopStreaming,

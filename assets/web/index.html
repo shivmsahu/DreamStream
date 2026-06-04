@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DreamStream Web App</title>
+    <style>
+        body { margin: 0; background-color: #121212; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; position: absolute; z-index: 1; }
+        .controls { position: absolute; bottom: 40px; z-index: 2; display: flex; flex-direction: column; gap: 20px; align-items: center; width: 100%; }
+        button { background-color: #8B5CF6; color: white; border: none; padding: 16px 32px; border-radius: 30px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.5); -webkit-tap-highlight-color: transparent; cursor: pointer; }
+        .status { position: absolute; top: 20px; z-index: 2; background: rgba(0,0,0,0.7); padding: 12px 20px; border-radius: 20px; font-size: 14px; font-weight: bold; text-align: center; max-width: 90%; line-height: 1.4; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .trust-box { background: rgba(0,0,0,0.8); padding: 20px; border-radius: 12px; border: 2px solid #E63946; text-align: center; display: none; margin-top: 20px; max-width: 300px; }
+        .trust-box a { color: #8B5CF6; font-weight: bold; font-size: 16px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Ready</div>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    
+    <div class="controls">
+        <div class="trust-box" id="trustBox">
+            <p style="margin-top:0;">Connection Blocked by Browser Security.</p>
+            <p style="font-size: 12px; color: #ccc;">Because your PC uses a local self-signed certificate, you must explicitly trust it first.</p>
+            <a href="#" id="trustLink" target="_blank">Click here to Trust Certificate</a>
+            <p style="font-size: 12px; color: #ccc; margin-bottom:0;">Accept the warning in the new tab, then return here to stream.</p>
+        </div>
+        <button id="startBtn">Start Camera</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const statusEl = document.getElementById('status');
+        const trustBox = document.getElementById('trustBox');
+        const trustLink = document.getElementById('trustLink');
+        
+        let ws;
+        let stream;
+        let interval;
+        
+        // Extract PC IP from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        let pcIp = urlParams.get('ip');
+        let pcPort = urlParams.get('port') || '8443';
+        
+        // If loaded directly from PC local server, use host
+        if (!pcIp && (window.location.hostname !== 'shivmsahu.github.io')) {
+            pcIp = window.location.hostname;
+            pcPort = window.location.port || '8443';
+        }
+        
+        if (!pcIp) {
+            statusEl.innerText = "Error: Missing PC IP Address in URL";
+            startBtn.style.display = "none";
+        }
+
+        startBtn.onclick = async () => {
+            if (stream) {
+                clearInterval(interval);
+                if (ws) ws.close();
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+                startBtn.innerText = "Start Camera";
+                startBtn.style.backgroundColor = "#8B5CF6";
+                statusEl.innerText = "Ready";
+                trustBox.style.display = 'none';
+                return;
+            }
+
+            try {
+                if (!pcIp) {
+                    pcIp = prompt("Please enter the DreamStream PC IP Address (e.g., 192.168.1.5):");
+                    if (!pcIp) return;
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+                video.srcObject = stream;
+                
+                const wsUri = 'wss://' + pcIp + ':' + pcPort + '/ws';
+                statusEl.innerText = "Connecting to " + wsUri + "...";
+                ws = new WebSocket(wsUri);
+                
+                ws.onopen = () => {
+                    trustBox.style.display = 'none';
+                    statusEl.innerText = "Connected & Streaming to PC";
+                    startBtn.innerText = "Stop Stream";
+                    startBtn.style.backgroundColor = "#E63946";
+                    
+                    interval = setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN && video.videoWidth > 0) {
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            canvas.toBlob((blob) => {
+                                ws.send(blob);
+                            }, 'image/jpeg', 0.6);
+                        }
+                    }, 1000 / 30);
+                };
+                
+                ws.onclose = () => {
+                    clearInterval(interval);
+                    if (statusEl.innerText !== "Disconnected") {
+                        statusEl.innerText = "Disconnected";
+                    }
+                    if (stream) {
+                        stream.getTracks().forEach(t => t.stop());
+                        stream = null;
+                    }
+                    startBtn.innerText = "Start Camera";
+                    startBtn.style.backgroundColor = "#8B5CF6";
+                };
+
+                ws.onerror = (e) => {
+                    statusEl.innerText = "WebSocket Connection Failed!";
+                    trustLink.href = 'https://' + pcIp + ':' + pcPort + '/';
+                    trustBox.style.display = 'block';
+                };
+            } catch (err) {
+                statusEl.innerText = "Camera Error: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
