@@ -98,7 +98,24 @@ class _AndroidWebcamScreenState extends State<AndroidWebcamScreen> with SingleTi
 
   Future<String> _getLocalIpAddress() async {
     try {
-      for (var interface in await NetworkInterface.list()) {
+      final interfaces = await NetworkInterface.list();
+      
+      for (var interface in interfaces) {
+        final name = interface.name.toLowerCase();
+        if (name.contains('wsl') || name.contains('veth') || name.contains('vmware') || name.contains('virtual') || name.contains('hyper')) {
+          continue;
+        }
+        
+        for (var addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            if (addr.address.startsWith('192.168.') || addr.address.startsWith('10.') || addr.address.startsWith('172.')) {
+              return addr.address;
+            }
+          }
+        }
+      }
+      
+      for (var interface in interfaces) {
         for (var addr in interface.addresses) {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
             return addr.address;
@@ -330,7 +347,24 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
 
   Future<String> _getLocalIpAddress() async {
     try {
-      for (var interface in await NetworkInterface.list()) {
+      final interfaces = await NetworkInterface.list();
+      
+      for (var interface in interfaces) {
+        final name = interface.name.toLowerCase();
+        if (name.contains('wsl') || name.contains('veth') || name.contains('vmware') || name.contains('virtual') || name.contains('hyper')) {
+          continue;
+        }
+        
+        for (var addr in interface.addresses) {
+          if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
+            if (addr.address.startsWith('192.168.') || addr.address.startsWith('10.') || addr.address.startsWith('172.')) {
+              return addr.address;
+            }
+          }
+        }
+      }
+      
+      for (var interface in interfaces) {
         for (var addr in interface.addresses) {
           if (addr.type == InternetAddressType.IPv4 && !addr.isLoopback) {
             return addr.address;
