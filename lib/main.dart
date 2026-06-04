@@ -79,6 +79,7 @@ class _AndroidWebcamScreenState extends State<AndroidWebcamScreen> with SingleTi
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   bool _isScanning = false;
+  static const platform = MethodChannel('com.example.flutter_webcam_app/service');
 
   @override
   void initState() {
@@ -114,6 +115,11 @@ class _AndroidWebcamScreenState extends State<AndroidWebcamScreen> with SingleTi
     final status = await Permission.camera.request();
     final ip = await _getLocalIpAddress();
     if (status.isGranted) {
+      try {
+        await platform.invokeMethod('startService');
+      } catch (e) {
+        print("Failed to start service: $e");
+      }
       setState(() {
         _permStatus = LocalizationService.getString('server_ready', {'ip': ip});
       });
