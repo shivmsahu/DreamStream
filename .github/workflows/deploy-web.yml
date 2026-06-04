@@ -4,8 +4,8 @@ on:
   push:
     branches: ["main"]
     paths:
-      - 'flutter_webcam_app/assets/web/**'
-      - 'flutter_webcam_app/.github/workflows/deploy-web.yml'
+      - 'assets/web/**'
+      - '.github/workflows/deploy-web.yml'
 
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './flutter_webcam_app/assets/web'
+          path: './assets/web'
 
       - name: Deploy to GitHub Pages
         id: deployment
