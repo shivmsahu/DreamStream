@@ -289,15 +289,67 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
   int _selectedFps = 30;
   int _selectedRotation = 90;
   int _selectedQuality = 50; 
-  String _connectionMode = 'Wi-Fi';
+  String _connectionMode = 'Wi-Fi (Android)';
   final TextEditingController _ipController = TextEditingController();
 
   ServerSocket? _pairingServer;
+  HttpServer? _httpsServer;
 
   @override
   void initState() {
     super.initState();
     _startMjpegServer();
+    _startHttpsServer();
+  }
+
+  Future<void> _startHttpsServer() async {
+    try {
+      final certStr = await rootBundle.loadString('assets/cert/cert.pem');
+      final keyStr = await rootBundle.loadString('assets/cert/key.pem');
+      
+      final securityContext = SecurityContext()
+        ..useCertificateChainBytes(utf8.encode(certStr))
+        ..usePrivateKeyBytes(utf8.encode(keyStr));
+
+      _httpsServer = await HttpServer.bindSecure(InternetAddress.anyIPv4, 8443, securityContext);
+      
+      _httpsServer!.listen((HttpRequest request) {
+        if (request.uri.path == '/ws') {
+          WebSocketTransformer.upgrade(request).then((WebSocket socket) {
+            setState(() {
+              _status = LocalizationService.getString('connected_playing');
+              _isStreaming = true;
+            });
+            
+            socket.listen((data) {
+              if (data is List<int>) {
+                if (mounted) {
+                  setState(() {
+                    _currentFrame = Uint8List.fromList(data);
+                  });
+                  _broadcastMjpegFrame(data);
+                }
+              }
+            }, onDone: () {
+              if (mounted) {
+                setState(() {
+                  _status = LocalizationService.getString('disconnected');
+                  _isStreaming = false;
+                  _currentFrame = null;
+                });
+              }
+            });
+          });
+        } else {
+          request.response
+            ..headers.contentType = ContentType.html
+            ..write(_webAppHtml)
+            ..close();
+        }
+      });
+    } catch (e) {
+      print('HTTPS Server failed: $e');
+    }
   }
 
   Future<void> _startMjpegServer() async {
@@ -338,6 +390,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
     _stopStreaming();
     _pairingServer?.close();
     _mjpegServer?.close(force: true);
+    _httpsServer?.close(force: true);
     for (var client in _mjpegClients) {
       client.close();
     }
@@ -456,6 +509,57 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
               Navigator.of(context).pop();
             },
             child: Text(LocalizationService.getString('cancel'), style: const TextStyle(color: Color(0xFF8B5CF6))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showIPhoneQrCodeDialog() async {
+    final ip = await _getLocalIpAddress();
+    if (ip == 'Unknown') {
+      setState(() => _status = LocalizationService.getString('cannot_find_local_ip'));
+      return;
+    }
+    
+    final url = 'https://$ip:8443';
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Scan with iPhone'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 250,
+              height: 250,
+              color: Colors.white,
+              padding: const EdgeInsets.all(16),
+              child: QrImageView(
+                data: url,
+                version: QrVersions.auto,
+                backgroundColor: Colors.white,
+                dataModuleStyle: const QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.square,
+                  color: Colors.black,
+                ),
+                eyeStyle: const QrEyeStyle(
+                  eyeShape: QrEyeShape.square,
+                  color: Colors.black,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Open Camera app to scan.\\nTap "Show Details -> Visit this website" to bypass the security warning.', textAlign: TextAlign.center, style: TextStyle(color: Colors.orange)),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close', style: TextStyle(color: Color(0xFF8B5CF6))),
           ),
         ],
       ),
@@ -714,9 +818,9 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
               children: [
                 Row(
                   children: [
-                    Expanded(child: _buildDropdown<String>(LocalizationService.getString('connection'), _connectionMode, ['USB (ADB)', 'Wi-Fi'], (v) => setState(() => _connectionMode = v!))),
+                    Expanded(child: _buildDropdown<String>(LocalizationService.getString('connection'), _connectionMode, ['USB (ADB)', 'Wi-Fi (Android)', 'Web App (iPhone)'], (v) => setState(() => _connectionMode = v!))),
                     const SizedBox(width: 16),
-                    if (_connectionMode == 'Wi-Fi')
+                    if (_connectionMode == 'Wi-Fi (Android)')
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -748,7 +852,38 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                                 IconButton(
                                   onPressed: _showQrCodeDialog,
                                   icon: const Icon(Icons.qr_code, color: Color(0xFF8B5CF6)),
-                                  tooltip: 'Show QR for Pairing',
+                                  tooltip: 'Show Android QR',
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_connectionMode == 'Web App (iPhone)')
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Waiting for iPhone connection...', style: TextStyle(fontSize: 12, color: Colors.white54, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF161616),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.white12),
+                                    ),
+                                    child: const Text('Ready to connect', style: TextStyle(color: Colors.white54)),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  onPressed: _showIPhoneQrCodeDialog,
+                                  icon: const Icon(Icons.qr_code, color: Color(0xFF8B5CF6)),
+                                  tooltip: 'Show iPhone QR',
                                 ),
                               ],
                             ),
@@ -773,7 +908,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                     Expanded(
                       child: !_isStreaming
                         ? ElevatedButton(
-                            onPressed: _startServerOnAndroid,
+                            onPressed: _connectionMode == 'Web App (iPhone)' ? _showIPhoneQrCodeDialog : _startServerOnAndroid,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF8B5CF6),
                               foregroundColor: Colors.white,
@@ -781,7 +916,7 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                               elevation: 0,
                             ),
-                            child: Text(LocalizationService.getString('connect'), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                            child: Text(_connectionMode == 'Web App (iPhone)' ? 'Show QR Code' : LocalizationService.getString('connect'), style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                           )
                         : ElevatedButton(
                             onPressed: _stopStreaming,
@@ -808,3 +943,96 @@ class _PCReceiverScreenState extends State<PCReceiverScreen> {
     );
   }
 }
+
+const _webAppHtml = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DreamStream iPhone</title>
+    <style>
+        body { margin: 0; background-color: #121212; color: #fff; font-family: -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        video { width: 100%; height: 100%; object-fit: cover; position: absolute; z-index: 1; }
+        .controls { position: absolute; bottom: 40px; z-index: 2; display: flex; gap: 20px; }
+        button { background-color: #8B5CF6; color: white; border: none; padding: 16px 32px; border-radius: 30px; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.5); -webkit-tap-highlight-color: transparent; }
+        .status { position: absolute; top: 20px; z-index: 2; background: rgba(0,0,0,0.6); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Ready</div>
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <div class="controls">
+        <button id="startBtn">Start Camera</button>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const statusEl = document.getElementById('status');
+        let ws;
+        let stream;
+        let interval;
+
+        startBtn.onclick = async () => {
+            if (stream) {
+                clearInterval(interval);
+                if (ws) ws.close();
+                stream.getTracks().forEach(t => t.stop());
+                stream = null;
+                startBtn.innerText = "Start Camera";
+                startBtn.style.backgroundColor = "#8B5CF6";
+                statusEl.innerText = "Ready";
+                return;
+            }
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
+                video.srcObject = stream;
+                
+                const loc = window.location;
+                const wsUri = (loc.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + loc.host + '/ws';
+                ws = new WebSocket(wsUri);
+                
+                ws.onopen = () => {
+                    statusEl.innerText = "Connected to PC";
+                    startBtn.innerText = "Stop Stream";
+                    startBtn.style.backgroundColor = "#E63946";
+                    
+                    interval = setInterval(() => {
+                        if (ws.readyState === WebSocket.OPEN && video.videoWidth > 0) {
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            canvas.toBlob((blob) => {
+                                ws.send(blob);
+                            }, 'image/jpeg', 0.6);
+                        }
+                    }, 1000 / 30);
+                };
+                
+                ws.onclose = () => {
+                    clearInterval(interval);
+                    statusEl.innerText = "Disconnected";
+                    if (stream) {
+                        stream.getTracks().forEach(t => t.stop());
+                        stream = null;
+                    }
+                    startBtn.innerText = "Start Camera";
+                    startBtn.style.backgroundColor = "#8B5CF6";
+                };
+
+                ws.onerror = (e) => {
+                    statusEl.innerText = "WebSocket Error";
+                };
+            } catch (err) {
+                statusEl.innerText = "Error: " + err.message;
+            }
+        };
+    </script>
+</body>
+</html>
+''';
