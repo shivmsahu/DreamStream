@@ -134,7 +134,13 @@ class _AndroidWebcamScreenState extends State<AndroidWebcamScreen> with SingleTi
     final status = await Permission.camera.request();
     if (!status.isGranted) return;
 
-    Navigator.of(context).push(MaterialPageRoute(
+    try {
+      await platform.invokeMethod('stopService');
+    } catch (e) {
+      print('Failed to stop service: $e');
+    }
+
+    await Navigator.of(context).push(MaterialPageRoute(
       builder: (context) => Scaffold(
         appBar: AppBar(title: Text(LocalizationService.getString('scan_pc_qr_code')), backgroundColor: const Color(0xFF121212)),
         body: MobileScanner(
@@ -179,6 +185,12 @@ class _AndroidWebcamScreenState extends State<AndroidWebcamScreen> with SingleTi
         ),
       ),
     ));
+
+    try {
+      await platform.invokeMethod('startService');
+    } catch (e) {
+      print('Failed to start service: $e');
+    }
   }
 
   @override
